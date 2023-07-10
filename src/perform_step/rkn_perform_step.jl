@@ -4,7 +4,7 @@
 ## y₁ = y₀ + hy'₀ + h²∑b̄ᵢk'ᵢ
 ## y'₁ = y'₀ + h∑bᵢk'ᵢ
 
-const NystromCCDefaultInitialization = Union{Nystrom4ConstantCache, FineRKN4ConstantCache,
+const NystromCCDefaultInitialization = Union{Nystrom4ConstantCache,
     FineRKN5ConstantCache,
     Nystrom4VelocityIndependentConstantCache,
     Nystrom5VelocityIndependentConstantCache,
@@ -26,7 +26,7 @@ function initialize!(integrator, cache::NystromCCDefaultInitialization)
     integrator.fsalfirst = ArrayPartition((kdu, ku))
 end
 
-const NystromDefaultInitialization = Union{Nystrom4Cache, FineRKN4Cache, FineRKN5Cache,
+const NystromDefaultInitialization = Union{Nystrom4Cache, FineRKN5Cache,
     Nystrom4VelocityIndependentCache,
     Nystrom5VelocityIndependentCache,
     IRKN3Cache, IRKN4Cache,
@@ -123,6 +123,26 @@ end
     integrator.stats.nf2 += 1
 end
 
+function initialize!(integrator, cache::FineRKN4ConstantCache)
+    duprev, uprev = integrator.uprev.x
+    integrator.kshortsize = 3
+    integrator.k = typeof(integrator.k)(undef, integrator.kshortsize)
+
+    kdu = integrator.f.f1(duprev, uprev, integrator.p, integrator.t)
+    ku = integrator.f.f2(duprev, uprev, integrator.p, integrator.t)
+    integrator.stats.nf += 1
+    integrator.stats.nf2 += 1
+    integrator.fsalfirst = ArrayPartition((kdu, ku))
+    integrator.fsallast = zero(integrator.fsalfirst)
+
+    integrator.k[1] = integrator.fsalfirst
+    @inbounds for i in 2:(integrator.kshortsize - 1)
+        integrator.k[i] = zero(integrator.fsalfirst)
+    end
+    integrator.k[integrator.kshortsize] = integrator.fsallast
+end
+
+
 @muladd function perform_step!(integrator, cache::FineRKN4ConstantCache,
     repeat_step = false)
     @unpack t, dt, f, p = integrator
@@ -152,13 +172,15 @@ end
 
     u = uprev + dt * (duprev + dt * (b1 * k1 + b3 * k3 + b4 * k4 + b5 * k5)) # b2 = 0
     du = duprev + dt * (bbar1 * k1 + bbar3 * k3 + bbar4 * k4 + bbar5 * k5) # bbar2 = 0
+    dduu = integrator.f.f1(du, u, p, t + dt)
 
     integrator.u = ArrayPartition((du, u))
     integrator.fsallast = ArrayPartition((f.f1(du, u, p, t + dt), f.f2(du, u, p, t + dt)))
     integrator.stats.nf += 5
     integrator.stats.nf2 += 1
-    integrator.k[1] = integrator.fsalfirst
-    integrator.k[2] = integrator.fsallast
+    integrator.k[1] = ArrayPartition(integrator.fsalfirst.x[1], k2)
+    integrator.k[2] = ArrayPartition(k3, k4)
+    integrator.k[3] = ArrayPartition(k5, dduu)
 
     if integrator.opts.adaptive
         dtsq = dt^2
@@ -170,6 +192,23 @@ end
             integrator.opts.internalnorm, t)
         integrator.EEst = integrator.opts.internalnorm(atmp, t)
     end
+end
+
+function initialize!(integrator, cache::FineRKN4Cache)
+    @unpack fsalfirst, k = cache
+    duprev, uprev = integrator.uprev.x
+
+    integrator.fsalfirst = fsalfirst
+    integrator.fsallast = k
+    integrator.kshortsize = 3
+    resize!(integrator.k, integrator.kshortsize)
+    integrator.k[1] = ArrayPartition(cache.fsalfirst.x[1], cache.k2)
+    integrator.k[2] = ArrayPartition(cache.k3, cache.k4)
+    integrator.k[3] = ArrayPartition(cache.k5, cache.k5) # k5 Platzhalter für ddu
+    integrator.f.f1(integrator.fsallast.x[1], duprev, uprev, integrator.p, integrator.t)
+    integrator.f.f2(integrator.fsallast.x[2], duprev, uprev, integrator.p, integrator.t)
+    integrator.stats.nf += 1
+    integrator.stats.nf2 += 1
 end
 
 @muladd function perform_step!(integrator, cache::FineRKN4Cache, repeat_step = false)
@@ -213,6 +252,7 @@ end
 
     f.f1(k.x[1], du, u, p, t + dt)
     f.f2(k.x[2], du, u, p, t + dt)
+    dduu = integrator.f.f1(du, u, p, t + dt) # noch ändern (wahrschinlich ist hier ein Fehler. Dann auch oben im initialize
     integrator.stats.nf += 5
     integrator.stats.nf2 += 1
     if integrator.opts.adaptive

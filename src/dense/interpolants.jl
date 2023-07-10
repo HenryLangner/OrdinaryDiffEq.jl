@@ -2845,6 +2845,124 @@ end
 """
 
 """
+@def finerkn4unpack begin
+    if typeof(cache) <: OrdinaryDiffEqMutableCache
+        @unpack r15, r14, r13, r12, r35, r34, r33, r45, r44, r43, r55, r54, r53, r65, r64, r63, rp14, rp13, rp12, rp11, rp34, rp33, rp32, rp44, rp43, rp42, rp54, rp53, rp52, rp64, rp63, rp62 = cache.tab
+    else
+        @unpack r15, r14, r13, r12, r35, r34, r33, r45, r44, r43, r55, r54, r53, r65, r64, r63, rp14, rp13, rp12, rp11, rp34, rp33, rp32, rp44, rp43, rp42, rp54, rp53, rp52, rp64, rp63, rp62 = cache
+    end
+end
+
+@def finerkn4pre0 begin
+    @finerkn4unpack
+    b1Θ = Θ^2 * @evalpoly(Θ, r12, r13, r14, r15)
+    b3Θ = Θ^3 * @evalpoly(Θ, r33, r34, r33)
+    b4Θ = Θ^3 * @evalpoly(Θ, r43, r44, r45)
+    b5Θ = Θ^3 * @evalpoly(Θ, r53, r54, r55)
+    b6Θ = Θ^3 * @evalpoly(Θ, r63, r64, r65)
+
+    bp1Θ = Θ^2 * @evalpoly(Θ, rp11, rp12, rp13, rp14)
+    bp3Θ = Θ^2 * @evalpoly(Θ, rp32, rp33, rp34)
+    bp4Θ = Θ^2 * @evalpoly(Θ, rp42, rp43, rp44)
+    bp5Θ = Θ^2 * @evalpoly(Θ, rp52, rp53, rp54)
+    bp6Θ = Θ^2 * @evalpoly(Θ, rp62, rp63, rp64)
+
+    kk1, kk2, kk3 = k
+    k1, k2 = kk1.x
+    k3, k4 = kk2.x
+    k5, k6 = kk3.x
+
+    duprev, uprev = y₀.x
+    dtsq = dt^2
+end
+
+@muladd function _ode_interpolant(Θ, dt, y₀, y₁, k,
+    cache::Union{FineRKN4ConstantCache, FineRKN4Cache},
+    idxs::Nothing, T::Type{Val{0}})
+    @finerkn4pre0
+    return ArrayPartition(duprev +
+                          dt * Θ *
+                          (bp1Θ * k1 + bp3Θ * k3 +
+                           bp4Θ * k4 + bp5Θ * k5 + bp6Θ * k6),
+        uprev +
+        dt * Θ *
+        (duprev +
+         dt * Θ * (b1Θ * k1 + b3Θ * k3 +
+                   b4Θ * k4 + b5Θ * k5 + b6Θ * k6)))
+end
+
+@muladd function _ode_interpolant(Θ, dt, y₀, y₁, k,
+    cache::Union{FineRKN4ConstantCache, FineRKN4Cache}, idxs,
+    T::Type{Val{0}})
+    @finerkn4pre0
+    return ArrayPartition(duprev[idxs] +
+                          dt * Θ *
+                          (bp1Θ * k1[idxs] + bp3Θ * k3[idxs] +
+                           bp4Θ * k4[idxs] + bp5Θ * k5[idxs] + bp6Θ * k6[idxs]),
+        uprev[idxs] +
+        dt * Θ *
+        (duprev[idxs] +
+         dt * Θ *
+         (b1Θ * k1[idxs] +
+          b3Θ * k3[idxs] +
+          b4Θ * k4[idxs] + b5Θ * k5[idxs] + b6Θ * k6[idxs])))
+end
+
+@muladd function _ode_interpolant!(out, Θ, dt, y₀, y₁, k,
+    cache::Union{FineRKN4ConstantCache, FineRKN4Cache},
+    idxs::Nothing, T::Type{Val{0}})
+    @finerkn4pre0
+    @inbounds @.. broadcast=false out.x[2]=uprev +
+                                           dt * Θ *
+                                           (duprev +
+                                            dt * Θ *
+                                            (b1Θ * k1 +
+                                             b3Θ * k3 +
+                                             b4Θ * k4 + b5Θ * k5 + b6Θ * k6))
+    @inbounds @.. broadcast=false out.x[1]=duprev +
+                                           dt * Θ *
+                                           (bp1Θ * k1 + bp3Θ * k3 +
+                                            bp4Θ * k4 + bp5Θ * k5 + bp6Θ * k6)
+    #for i in eachindex(out.x[1])
+    #  out.x[2][i]  = uprev[i] + dt*Θ*(duprev[i] + dt*Θ*(b1Θ*k1[i] +
+    #                                                    b3Θ*k3[i] +
+    #                                                    b4Θ*k4[i] + b5Θ*k5[i] + b6Θ*k6[i]))
+    #  out.x[1][i] =  duprev[i] + dt*Θ*(bp1Θ*k1[i] + bp3Θ*k3[i] +
+    #                                   bp4Θ*k4[i] + bp5Θ*k5[i] + bp6Θ*k6[i])
+    #end
+    out
+end
+
+@muladd function _ode_interpolant!(out, Θ, dt, y₀, y₁, k,
+    cache::Union{FineRKN4ConstantCache, FineRKN4Cache}, idxs,
+    T::Type{Val{0}})
+    @finerkn4pre0
+    @inbounds @.. broadcast=false out.x[2]=uprev[idxs] +
+                                           dt * Θ *
+                                           (duprev[idxs] +
+                                            dt * Θ *
+                                            (b1Θ * k1[idxs] +
+                                             b3Θ * k3[idxs] +
+                                             b4Θ * k4[idxs] + b5Θ * k5[idxs] +
+                                             b6Θ * k6[idxs]))
+    @inbounds @.. broadcast=false out.x[1]=duprev[idxs] +
+                                           dt * Θ *
+                                           (bp1Θ * k1[idxs] + bp3Θ * k3[idxs] +
+                                            bp4Θ * k4[idxs] + bp5Θ * k5[idxs] +
+                                            bp6Θ * k6[idxs])
+    #for (j,i) in enumerate(idxs)
+    #  out.x[2][j]  = uprev[i] + dt*Θ*(duprev[i] + dt*Θ*(b1Θ*k1[i] +
+    #                                                    b3Θ*k3[i] +
+    #                                                    b4Θ*k4[i] + b5Θ*k5[i] + b6Θ*k6[i]))
+    #  out.x[1][j] = duprev[i] + dt*Θ*(bp1Θ*k1[i] + bp3Θ*k3[i] +
+    #                                  bp4Θ*k4[i] + bp5Θ*k5[i] + bp6Θ*k6[i])
+    #end
+    out 
+end
+"""
+
+
+"""
 @def dprkn6unpack begin
     if typeof(cache) <: OrdinaryDiffEqMutableCache
         @unpack r14, r13, r12, r11, r10, r34, r33, r32, r31, r44, r43, r42, r41, r54, r53, r52, r51, r64, r63, r62, r61, rp14, rp13, rp12, rp11, rp10, rp34, rp33, rp32, rp31, rp44, rp43, rp42, rp41, rp54, rp53, rp52, rp51, rp64, rp63, rp62, rp61 = cache.tab

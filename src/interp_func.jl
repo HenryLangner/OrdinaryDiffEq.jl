@@ -164,6 +164,14 @@ function DiffEqBase.interp_summary(::Type{cacheType},
     dense ? "specialized 6th order interpolation" : "1st order linear"
 end
 
+function DiffEqBase.interp_summary(::Type{cacheType},
+    dense::Bool) where {
+    cacheType <:
+    Union{FineRKN4ConstantCache,
+        FineRKN4Cache}}
+    dense ? "specialized 4th order interpolation" : "1st order linear"
+end
+
 function (interp::InterpolationData)(tvals, idxs, deriv, p, continuity::Symbol = :left)
     ode_interpolation(tvals, interp, idxs, deriv, p, continuity)
 end
